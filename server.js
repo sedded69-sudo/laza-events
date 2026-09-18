@@ -110,6 +110,22 @@ app.get('/api/has-admin', async (req, res) => {
   res.json({ hasAdmin: !!existingAdmin });
 });
 
+// PIN-protected account creation — lets you (re)create an admin account
+// any time, even if one already exists, using a fixed PIN.
+const CREATE_ACCOUNT_PIN = process.env.CREATE_ACCOUNT_PIN || '7878';
+app.post('/api/create-account', async (req, res) => {
+  const { username, password, pin } = req.body;
+  if (pin !== CREATE_ACCOUNT_PIN) return res.status(403).json({ error: 'Wrong PIN' });
+  if (!username || !password || password.length < 4) return res.status(400).json({ error: 'Invalid input' });
+  const passwordHash = await bcrypt.hash(password, 10);
+  await User.findOneAndUpdate(
+    { username },
+    { username, passwordHash, role: 'admin', permissions: { scan: true, generate: true, passes: true } },
+    { upsert: true }
+  );
+  res.json({ ok: true });
+});
+
 // ---------- login ----------
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
