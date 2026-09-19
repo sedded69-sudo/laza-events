@@ -42,7 +42,10 @@ const ConfigSchema = new mongoose.Schema({
 });
 const CategorySchema = new mongoose.Schema({
   tier: { type: String, unique: true },
-  imageBase64: String
+  imageBase64: String,
+  qrX: { type: Number, default: 8 },   // % from left
+  qrY: { type: Number, default: 28 },  // % from top
+  qrSize: { type: Number, default: 22 } // % of image width
 });
 const TicketSchema = new mongoose.Schema({
   _id: String, // the pass ID itself
@@ -180,8 +183,13 @@ app.get('/api/categories', async (req, res) => {
   res.json(cats);
 });
 app.post('/api/categories', auth('generate'), async (req, res) => {
-  const { tier, imageBase64 } = req.body;
-  await Category.findOneAndUpdate({ tier }, { tier, imageBase64 }, { upsert: true });
+  const { tier, imageBase64, qrX, qrY, qrSize } = req.body;
+  const update = { tier };
+  if (imageBase64) update.imageBase64 = imageBase64;
+  if (qrX !== undefined) update.qrX = qrX;
+  if (qrY !== undefined) update.qrY = qrY;
+  if (qrSize !== undefined) update.qrSize = qrSize;
+  await Category.findOneAndUpdate({ tier }, update, { upsert: true });
   res.json({ ok: true });
 });
 
@@ -257,5 +265,5 @@ app.post('/api/tickets/checkin-manual', auth('scan'), async (req, res) => {
   return res.json({ ok: false, reason: 'already_used', usedAt: existing.usedAt, ticket: existing });
 });
 
-app.get('/', (req, res) => res.send('Gatekeep API running'));
+app.get('/', (req, res) => res.send('LAZA API running'));
 app.listen(PORT, () => console.log('Listening on ' + PORT));
