@@ -202,6 +202,21 @@ app.get('/api/tickets', auth('passes'), async (req, res) => {
   const tickets = await Ticket.find().sort({ createdAt: -1 });
   res.json(tickets);
 });
+// lightweight, scan-safe: counts only, no names/IDs — usable by scan-only staff
+app.get('/api/tickets/summary', auth('scan'), async (req, res) => {
+  const all = await Ticket.find({}, 'tier used');
+  const byTier = {};
+  all.forEach(t => { byTier[t.tier] = byTier[t.tier] || { total: 0, used: 0 }; byTier[t.tier].total++; if (t.used) byTier[t.tier].used++; });
+  res.json({ total: all.length, used: all.filter(t => t.used).length, byTier });
+});
+// scan-safe search for manual check-in — no signature field exposed
+app.get('/api/tickets/search', auth('scan'), async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q) return res.json([]);
+  const regex = new RegExp(q, 'i');
+  const results = await Ticket.find({ $or: [{ _id: regex }, { name: regex }] }, '_id tier name used usedAt').limit(30);
+  res.json(results);
+});
 app.delete('/api/tickets', auth(), async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
   await Ticket.deleteMany({});
@@ -224,6 +239,19 @@ app.post('/api/tickets/checkin', auth('scan'), async (req, res) => {
   );
   if (updated) return res.json({ ok: true, ticket: updated });
 
+  const existing = await Ticket.findById(id);
+  if (!existing) return res.json({ ok: false, reason: 'not_found' });
+  return res.json({ ok: false, reason: 'already_used', usedAt: existing.usedAt, ticket: existing });
+});
+// manual check-in by ID (from the search/lookup list) — same atomic guard, no signature needed since staff is confirming identity by eye
+app.post('/api/tickets/checkin-manual', auth('scan'), async (req, res) => {
+  const { id } = req.body;
+  const updated = await Ticket.findOneAndUpdate(
+    { _id: id, used: false },
+    { $set: { used: true, usedAt: new Date() } },
+    { new: true }
+  );
+  if (updated) return res.json({ ok: true, ticket: updated });
   const existing = await Ticket.findById(id);
   if (!existing) return res.json({ ok: false, reason: 'not_found' });
   return res.json({ ok: false, reason: 'already_used', usedAt: existing.usedAt, ticket: existing });
